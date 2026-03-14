@@ -1,0 +1,34 @@
+{
+  "name": "bmd",
+  "version": "0.1.0",
+  "description": "Beautiful Markdown renderer for the terminal with syntax highlighting and Mermaid diagrams",
+  "module": "src/cli/index.ts",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "bmd": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "bun build src/cli/index.ts --compile --outfile bmd",
+    "postinstall": "node postinstall.mjs",
+    "start": "bun run src/cli/index.ts",
+    "test": "bun test tests/unit tests/integration"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "beautiful-mermaid": "github:lukilabs/beautiful-mermaid#v1.1.3",
+    "chalk": "^5.6.2",
+    "citty": "^0.2.1",
+    "esbuild": "^0.25.0",
+    "markdown-exit": "1.0.0-beta.9",
+    "shiki": "^4.0.2",
+    "string-width": "^8.2.0",
+    "strip-ansi": "^7.2.0",
+    "wrap-ansi": "^10.0.0"
+  }
+}
