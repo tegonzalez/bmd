@@ -1,6 +1,9 @@
 import { Chalk } from 'chalk';
 import type { ThemeConfig } from '../types/theme.ts';
 
+// Re-export themed layer for callers that use the new MdTheme-based API
+export { createThemedAnsiLayer } from '../theme/adapt/ansi.ts';
+
 export interface AnsiLayer {
   heading(text: string, level: number): string;
   bold(text: string): string;
@@ -32,8 +35,8 @@ export function createAnsiLayer(theme: ThemeConfig): AnsiLayer {
 
   return {
     heading(text: string, level: number): string {
-      const colorFn = levelColors[level] || levelColors[6];
-      const style = theme.headings[level];
+      const colorFn = levelColors[level]! || levelColors[6]!;
+      const style = theme.headings[level]!;
       if (style?.bold) {
         return c.bold(colorFn(text));
       }

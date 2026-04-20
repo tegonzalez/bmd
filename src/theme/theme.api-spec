@@ -1,0 +1,247 @@
+# theme api-spec
+# Theme contract for bmd.
+# Defines the unified theme DTO, spec parsing, resolution, and validation.
+
+mod theme:
+
+  docs:
+    The theme contract owns the complete theme lifecycle: parsing spec strings,
+    resolving theme files, loading YAML, validating against schemas, rejecting
+    remote URLs (SAFE-03), and merging defaults for omitted facets.
+
+    The contract surface is one DTO (ResolvedTheme), one public entry point
+    (resolveTheme), and two pure helpers (parseThemeSpec, getDefaults).
+
+    Four adapter modules (ANSI, Shiki, Mermaid, CSS) translate ResolvedTheme
+    facets into renderer-specific formats. Adapters are outside the stable
+    contract boundary -- they translate, they do not define semantics.
+
+    BmdConfig.theme (from config.api-spec) holds a ResolvedTheme. This contract
+    owns the type; config.api-spec is the consumer.
+
+    Spec string format: "facet:name[+facet:name...]"
+    This format is a stability guarantee. Examples:
+      "syn:dracula"
+      "syn:dracula+md:dark"
+      "syn:dracula+md:dark+mer:light+web:minimal"
+
+  # --- Facet enum ---
+
+  enum Facet @doc("The four independent theme dimensions."):
+    ^syn: str
+    ^md: str
+    ^mer: str
+    ^web: str
+
+  docs(Facet):
+    Each facet governs a distinct rendering concern:
+    - syn: syntax highlighting (Shiki theme selection, fallback color)
+    - md: markdown terminal rendering (headings, spacing, bullets, colors)
+    - mer: mermaid diagram rendering (box, line, arrow colors)
+    - web: browser preview (fonts, layout, day/night palettes)
+
+    Facets are independent: any subset may be specified in a theme spec.
+    Omitted facets use defaults from getDefaults().
+
+  # --- Sub-object types ---
+
+  struct HeadingStyle @doc("Style for a single heading level (1-6)."):
+    bold: bool
+    color: str @doc("6-digit hex color, e.g. #00ffff.")
+
+  struct ColorPalette @doc("Six-color palette for a browser preview mode."):
+    bg: str @doc("Background color.")
+    fg: str @doc("Foreground/text color.")
+    accent: str @doc("Accent color for links and active elements.")
+    border: str @doc("Border color.")
+    codeBg: str @doc("Code block background color.")
+    codeFg: str @doc("Code block foreground color.")
+
+  # --- Facet shapes ---
+
+  struct SynFacet @doc("Syntax highlighting facet. Controls Shiki theme and fallback color."):
+    shikiTheme: str @doc("Shiki theme ID, e.g. 'github-dark' or 'dracula'.")
+    defaultColor: str @doc("Fallback hex color when no token color is available.")
+
+  struct MdFacet @doc("Markdown terminal rendering facet. Superset of the deprecated ThemeConfig."):
+    headings: map<str, HeadingStyle> @doc("Heading styles keyed by level ('1'-'6').")
+    codeBlockIndent: int @doc("Indent width for code blocks in columns.")
+    blockquoteBarChar: str @doc("Character used for blockquote bar (max 2 chars).")
+    tableBorder: bool @doc("Whether to render table borders.")
+    listBullets: seq<str> @doc("Bullet characters for nested list levels.")
+    linkFormat: str @doc("Link format: 'inline', 'reference', or 'osc8'.")
+    hrChar: str @doc("Character used for horizontal rules (max 2 chars).")
+    hrWidth: str @doc("HR width: 'full' or a positive integer as string.")
+    elementSpacing: int @doc("Blank lines between block elements.")
+    # Optional ANSI color overrides
+    boldColor: str? @doc("Hex color override for bold text.")
+    italicColor: str? @doc("Hex color override for italic text.")
+    codeColor: str? @doc("Hex color override for inline code.")
+    codeBlockBgColor: str? @doc("Hex color override for code block background.")
+    blockquoteBarColor: str? @doc("Hex color override for blockquote bar.")
+    linkColor: str? @doc("Hex color override for links.")
+
+  struct MerFacet @doc("Mermaid diagram facet. Core colors for ASCII diagram rendering."):
+    fg: str @doc("Foreground/text color (hex).")
+    border: str @doc("Box border color (hex).")
+    line: str @doc("Connecting line color (hex).")
+    arrow: str @doc("Arrow/edge color (hex).")
+    # Optional extended properties
+    corner: str? @doc("Box corner character for ASCII rendering.")
+    junction: str? @doc("Line junction character for ASCII rendering.")
+    nodeFill: str? @doc("Node fill color override (hex).")
+    edgeColor: str? @doc("Edge color override (hex).")
+    labelColor: str? @doc("Label color override (hex).")
+
+  struct WebFacet @doc("Browser preview facet. Fonts, layout, and day/night color palettes."):
+    fontFamily: str @doc("Primary font family (CSS value).")
+    monoFontFamily: str @doc("Monospace font family (CSS value).")
+    maxWidth: str @doc("Max content width (CSS value, e.g. '900px').")
+    spacing: int @doc("Spacing unit in pixels.")
+    fontSize: int @doc("Base font size in pixels (8-72).")
+    day: ColorPalette @doc("Day mode color palette.")
+    night: ColorPalette @doc("Night mode color palette.")
+
+  # --- Core types ---
+
+  struct ThemeSpec @doc("Partial facet selections from parsing a spec string."):
+    syn: str?
+    md: str?
+    mer: str?
+    web: str?
+
+  docs(ThemeSpec):
+    Produced by parseThemeSpec from a spec string like "syn:dracula+md:dark".
+    Each field names a theme file for that facet. Omitted facets are undefined
+    and will use defaults during resolution.
+
+    This type is defined once in the contract. The duplicate declaration in
+    spec-parser.ts is superseded by this canonical definition.
+
+  struct ResolvedTheme @doc("Fully resolved theme DTO with all four facets populated."):
+    syn: SynFacet
+    md: MdFacet
+    mer: MerFacet
+    web: WebFacet
+
+  docs(ResolvedTheme):
+    The single theme DTO consumed by BmdConfig.theme (config.api-spec).
+    All four facets are always present -- omitted facets receive defaults
+    from getDefaults(). No field is ever undefined after resolution.
+
+    This is the stable type that all theme consumers depend on.
+    Adapters receive individual facets (e.g. MdFacet, SynFacet) and
+    translate them into renderer-specific formats.
+
+  # --- Operations ---
+
+  async fn resolveTheme(input: str) -> ResolvedTheme
+    @throws(BmdError)
+    @doc("Single public entry point: parse spec string, resolve files, load and validate YAML, merge defaults.")
+
+  docs(resolveTheme):
+    Complete theme resolution pipeline:
+
+    1. Parse spec string via parseThemeSpec (if input is a string)
+    2. For each specified facet, resolve file path:
+       - Check project-local: .bmd/themes/<facet>/<name>.yaml
+       - Check bundled: themes/<facet>/<name>.yaml
+       - Throw BmdError[ExitCode.THEME] if not found (searched paths listed)
+    3. Load YAML via Bun.YAML.parse()
+    4. Reject remote URLs in string values (SAFE-03 precondition)
+       - Scans recursively before schema validation
+       - Throws BmdError[ExitCode.THEME] with field paths listed
+    5. Validate against facet Zod schema (.strict() mode)
+       - Unknown fields rejected
+       - Type errors produce per-issue diagnostics on stderr
+       - Throws BmdError[ExitCode.THEME] on validation failure
+    6. Merge: specified facets override defaults, omitted facets use defaults
+
+    Resolution guarantees:
+    - Local theme files checked before bundled (project customization wins)
+    - Per-facet independence: specifying syn does not affect md/mer/web defaults
+    - URL rejection runs before schema validation (SAFE-03 is a precondition)
+    - Validation runs after YAML parse, before theme is returned (fail-fast)
+
+  fn parseThemeSpec(spec: str) -> ThemeSpec
+    @pure
+    @throws(Error)
+    @doc("Parse a composable spec string into facet selections.")
+
+  docs(parseThemeSpec):
+    Format: "facet:name[+facet:name...]"
+    Example: "syn:dracula+md:dark" -> ThemeSpec { syn: "dracula", md: "dark" }
+
+    Failure modes:
+    - Empty or whitespace-only spec: Error("Empty theme spec")
+    - Missing colon in part: Error with format guidance
+    - Unknown facet name: Error listing valid facets (syn, md, mer, web)
+    - Missing name after colon: Error identifying the facet
+
+  fn getDefaults() -> ResolvedTheme
+    @pure
+    @doc("Returns the canonical default ResolvedTheme with all four facets populated.")
+
+  docs(getDefaults):
+    Default values match the hardcoded baseline across the codebase:
+    - syn: shikiTheme="github-dark", defaultColor="#e1e4e8"
+    - md: cyan/green/yellow/blue/magenta/white headings, standard spacing
+    - mer: zinc-dark palette (fg=#e4e4e7, border=#a1a1aa)
+    - web: system fonts, 900px max-width, day/night palettes
+
+    Pure function. Always returns a fresh object. No I/O.
+
+  # --- Lower-contract dependencies ---
+
+  docs(dependencies):
+    BmdError and ExitCode are owned by the diagnostics module.
+    resolveTheme throws BmdError with ExitCode.THEME on all failure paths.
+    Diagnostic output (writeDiagnostic) writes to stderr for YAML errors
+    and validation failures -- stderr diagnostics are non-contractual.
+
+    config.api-spec imports ResolvedTheme from this contract for BmdConfig.theme.
+    This contract owns the ResolvedTheme type; config is the consumer.
+
+  # --- Adapter boundary ---
+
+  docs(adapters):
+    The following adapter functions translate ResolvedTheme facets into
+    renderer-specific formats. They are outside the stable contract surface.
+    Adapters translate; the core defines semantics.
+
+    - createThemedAnsiLayer(md: MdFacet) -> AnsiLayer
+      Converts MdFacet to a themed ANSI rendering layer using chalk.hex().
+      Terminal capability detection is an adapter concern.
+
+    - getShikiThemeName(syn: SynFacet) -> str
+      Extracts the Shiki theme ID from SynFacet.
+
+    - getShikiDefaultColor(syn: SynFacet) -> str
+      Extracts the fallback color from SynFacet.
+
+    - toMermaidTheme(mer: MerFacet) -> { fg, border, line, arrow }
+      Maps MerFacet to beautiful-mermaid DiagramColors shape.
+
+    - toCssVariables(web: WebFacet) -> str
+      Generates CSS custom property declarations from WebFacet.
+      Maps to CSS variable names used by the browser preview.
+
+    Adapter stability: adapter signatures may change as renderers evolve.
+    The core contract (ResolvedTheme, resolveTheme, facet shapes) is stable.
+
+  # --- Deprecated type migration ---
+
+  docs(migration):
+    ThemeConfig (src/types/theme.ts) is deprecated.
+    - ThemeConfig is superseded by MdFacet. MdFacet is a strict superset
+      that adds optional color overrides (boldColor, italicColor, etc.).
+    - Consumers of ThemeConfig should import MdTheme (the Zod-inferred type
+      that corresponds to MdFacet) from theme/schema/md.ts.
+
+    DEFAULT_THEME (src/types/theme.ts) is deprecated.
+    - DEFAULT_THEME is superseded by getDefaults().md.
+    - Consumers of DEFAULT_THEME should call getDefaults() and access the
+      .md facet for equivalent default markdown rendering values.
+
+    Both deprecated exports remain in src/types/theme.ts for backward
+    compatibility until all consumers are migrated.

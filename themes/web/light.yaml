@@ -1,0 +1,19 @@
+fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif"
+monoFontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace"
+maxWidth: "900px"
+spacing: 24
+fontSize: 15
+day:
+  bg: "#ffffff"
+  fg: "#1a1a2e"
+  accent: "#2563eb"
+  border: "#dddddd"
+  codeBg: "#f4f4f4"
+  codeFg: "#1a1a2e"
+night:
+  bg: "#1e1e2e"
+  fg: "#cdd6f4"
+  accent: "#89b4fa"
+  border: "#313244"
+  codeBg: "#181825"
+  codeFg: "#cdd6f4"

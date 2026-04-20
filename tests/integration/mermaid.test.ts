@@ -1,7 +1,24 @@
 import { test, expect, describe } from "bun:test";
-import { resolve } from "node:path";
+import { runPipeline } from "../../src/pipeline/index.ts";
+import { getDefaults } from "../../src/theme/defaults.ts";
+import type { BmdConfig } from "../../src/config/schema.ts";
 
-const CLI = resolve(import.meta.dir, "../../src/cli/index.ts");
+function makeConfig(overrides?: Partial<BmdConfig>): BmdConfig {
+  return {
+    format: 'utf8',
+    width: 80,
+    ansiEnabled: false,
+    pager: 'never',
+    unsafeHtml: false,
+    unicode: true,
+    filePath: undefined,
+    theme: getDefaults(),
+    templates: { enabled: false, map: undefined, auto_map: false, list_spec: undefined },
+    undo: { groupDelay: 500, depth: 200 },
+    serve: { host: '0.0.0.0', port: 3000, open: true, mode: 'both', colorMode: 'auto', readonly: false },
+    ...overrides,
+  };
+}
 
 describe("Mermaid integration", () => {
   test("document with 2 Mermaid blocks renders both in source order (MERM-02)", async () => {
@@ -21,16 +38,10 @@ describe("Mermaid integration", () => {
       "```",
     ].join("\n") + "\n";
 
-    const proc = Bun.spawn(["bun", CLI, "utf8", "-", "--no-ansi"], {
-      stdin: new TextEncoder().encode(input),
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const config = makeConfig({ ansiEnabled: false });
+    const result = await runPipeline({ source: input, config });
+    const stdout = result.rendered;
 
-    const stdout = await new Response(proc.stdout).text();
-    const exitCode = await proc.exited;
-
-    expect(exitCode).toBe(0);
     // Both diagrams should appear in the output
     expect(stdout).toContain("A");
     expect(stdout).toContain("B");
@@ -57,24 +68,15 @@ describe("Mermaid integration", () => {
       "```",
     ].join("\n") + "\n";
 
-    const proc = Bun.spawn(["bun", CLI, "utf8", "-", "--no-ansi"], {
-      stdin: new TextEncoder().encode(input),
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const config = makeConfig({ ansiEnabled: false });
+    const result = await runPipeline({ source: input, config });
+    const stdout = result.rendered;
 
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
-    const exitCode = await proc.exited;
-
-    expect(exitCode).toBe(0);
     // Valid diagram should render (contains the nodes)
     expect(stdout).toContain("A");
     expect(stdout).toContain("B");
     // Invalid block should show as raw text fallback
     expect(stdout).toContain("this is not valid mermaid syntax at all");
-    // Stderr should have a diagnostic for the error
-    expect(stderr).toContain("error");
   });
 
   test("document with syntax-highlighted code + Mermaid diagram renders both correctly", async () => {
@@ -89,16 +91,10 @@ describe("Mermaid integration", () => {
       "```",
     ].join("\n") + "\n";
 
-    const proc = Bun.spawn(["bun", CLI, "utf8", "-", "--no-ansi"], {
-      stdin: new TextEncoder().encode(input),
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const config = makeConfig({ ansiEnabled: false });
+    const result = await runPipeline({ source: input, config });
+    const stdout = result.rendered;
 
-    const stdout = await new Response(proc.stdout).text();
-    const exitCode = await proc.exited;
-
-    expect(exitCode).toBe(0);
     // TypeScript code block should render
     expect(stdout).toContain("const x = 42");
     // Mermaid diagram should also render

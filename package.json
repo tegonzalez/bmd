@@ -8,27 +8,49 @@
   "bin": {
     "bmd": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "themes",
+    "README.md"
+  ],
   "scripts": {
-    "build": "bun build src/cli/index.ts --compile --outfile bmd",
+    "build": "node postinstall.mjs",
     "postinstall": "node postinstall.mjs",
-    "start": "bun run src/cli/index.ts",
-    "test": "bun test tests/unit tests/integration"
+    "start": "node dist/cli.js",
+    "test": "node scripts/run-vitest.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "happy-dom": "^20.8.4",
+    "vitest": "^4.1.1"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "beautiful-mermaid": "github:lukilabs/beautiful-mermaid#v1.1.3",
+    "@tiptap/core": "^3.20.2",
+    "@tiptap/extension-code-block-lowlight": "^3.20.2",
+    "@tiptap/extension-document": "^3.20.2",
+    "@tiptap/extension-history": "^3.20.4",
+    "@tiptap/extension-text": "^3.20.2",
+    "@tiptap/pm": "^3.20.2",
+    "beautiful-mermaid": "github:tegonzalez/beautiful-mermaid",
     "chalk": "^5.6.2",
     "citty": "^0.2.1",
+    "dompurify": "^3.3.3",
     "esbuild": "^0.25.0",
+    "fast-diff": "^1.3.0",
+    "lowlight": "^3.3.0",
     "markdown-exit": "1.0.0-beta.9",
     "shiki": "^4.0.2",
     "string-width": "^8.2.0",
     "strip-ansi": "^7.2.0",
-    "wrap-ansi": "^10.0.0"
+    "wrap-ansi": "^10.0.0",
+    "ws": "^8.20.0",
+    "y-protocols": "^1.0.7",
+    "yaml": "^2.8.3",
+    "yjs": "^13.6.30",
+    "zod": "^4.0.0"
   }
 }

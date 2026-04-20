@@ -1,0 +1,224 @@
+# ws-protocol api-spec
+# WebSocket protocol contract for bmd browser preview.
+# Defines events, states, transitions, and effects for the pure FSM layer.
+
+mod ws_protocol:
+
+  docs:
+    The WS protocol contract separates pure FSM logic from network I/O.
+    Both server and client FSMs are pure functions: given a state and an
+    event, they return a new state plus effects/messages. No WebSocket
+    constructors, no DOM manipulation, no Bun.serve() in the FSM layer.
+
+    Transport adapters (WebSocket, HTTP polling) wire FSM inputs/outputs
+    to actual I/O. Both transports feed the same FSM, making event-shape
+    divergence structurally impossible.
+
+    The server:init message is the capability negotiation boundary --
+    it is always the first message sent on connection.
+
+  # --- Client -> Server events (4 types) ---
+
+  event file:read
+    @direction(client -> server)
+    @doc("Client requests current file content. Server replies with file:open.")
+
+  event file:write
+    @direction(client -> server)
+    @fields(content: str)
+    @doc("Client submits edited content for save. Server writes file and broadcasts file:saved.")
+
+  event file:unlock
+    @direction(client -> server)
+    @doc("Client requests lock removal. Server rejects if started with --readonly.")
+
+  event reconcile:request
+    @direction(client -> server)
+    @fields(stateVector: str, update: str, digest: str, protocolVersion?: number)
+    @doc("Sent by client on reconnect when digest mismatch detected. stateVector and update are base64-encoded Yjs binary data. digest is the client's last-observed content MD5.")
+
+  # --- Server -> Client events (7 types) ---
+  # Note: config:changed has been REMOVED -- it was never emitted by the server.
+
+  event server:init
+    @direction(server -> client)
+    @fields(config: ServerGlobalConfig)
+    @doc("Sent once on connection. Capability negotiation boundary entrypoint.")
+
+  event file:open
+    @direction(server -> client)
+    @fields(path: str, content: str, config: FileConfig, yjsState?: str, digest?: str)
+    @doc("Pushed on connection and on file:read. Contains per-file config and full content. digest is MD5 hex of content for reconnect reconciliation.")
+
+  event file:changed
+    @direction(server -> client)
+    @fields(update: str, digest?: str)
+    @doc("Broadcast on external file change. Contains base64-encoded Yjs binary update. digest is MD5 hex of new content for reconnect reconciliation.")
+
+  event file:saved
+    @direction(server -> client)
+    @fields(path: str)
+    @doc("Broadcast after successful file:write. Confirms save to all clients.")
+
+  event file:error
+    @direction(server -> client)
+    @fields(message: str)
+    @doc("Sent to originating client on error (readonly write, missing path, etc).")
+
+  event reconcile:complete
+    @direction(server -> client)
+    @fields(digest: str, update?: str, protocolVersion?: number)
+    @doc("Sent after server reconciles client state. digest is MD5 hex of content after merge. update is optional base64-encoded Yjs update if content diverged.")
+
+  # --- State shapes ---
+
+  state ServerState:
+    content: str | null
+    filePath: str | null
+    globalConfig: ServerGlobalConfig
+    fileConfig: FileConfig
+    isReadonly: bool
+    @doc("Extracted from server/index.ts. isReadonly is the --readonly flag.")
+
+  state ClientState:
+    fileConfig: FileConfig | null
+    currentPath: str | null
+    content: str | null
+    unsaved: bool
+    @doc("Extracted from web/app.ts module-level state.")
+
+  # --- Server FSM transitions ---
+
+  fn serverTransition(state: ServerState, event: ClientMessage) -> ServerTransitionResult
+    @pure
+    @doc("Pure server FSM. Handles file:read, file:write, file:unlock.")
+
+  docs(serverTransition):
+    Maps each client event to state changes, reply messages, broadcast
+    messages, and side effects. Never performs I/O directly.
+
+    file:read -> reply with file:open (no state change, no side effects)
+    file:write -> update content, reply nothing, broadcast file:saved,
+                  side effects: write-file, update-yjs, set-last-written-content
+    file:unlock -> reply file:error if readonly (no state change)
+
+    Unexpected or malformed events produce no-op transitions (state unchanged,
+    no replies, no broadcasts, no side effects).
+
+  fn serverOnConnect(state: ServerState) -> ServerMessage[]
+    @pure
+    @doc("Returns the init message sequence for a new connection.")
+
+  docs(serverOnConnect):
+    Always returns server:init as first message. If content and filePath
+    are available, also returns file:open. This is the capability
+    negotiation boundary -- clients receive server config before any
+    file-specific events.
+
+  fn serverHandleExternal(state: ServerState, event: ServerExternalEvent) -> ServerExternalResult
+    @pure
+    @doc("Handles file-watcher and connection events.")
+
+  docs(serverHandleExternal):
+    file-watcher:changed -> update state.content, broadcast file:changed
+                            with base64-encoded Yjs update
+    client:connected -> same as serverOnConnect (returns init sequence)
+
+  # --- Client FSM transitions ---
+
+  fn clientTransition(state: ClientState, event: ServerMessage) -> ClientTransitionResult
+    @pure
+    @doc("Pure client FSM. Maps server events to state changes and UI effects.")
+
+  docs(clientTransition):
+    server:init -> no state change, no effects (global config stored elsewhere)
+    file:open -> set fileConfig, currentPath, content; unsaved=false;
+                 effects: set-editor-content, render-preview, set-view-mode,
+                 init-color-mode, init-lock-badge, set-editor-editable,
+                 update-filename, reset-yjs
+    file:changed -> effects: apply-yjs-update, show-reload-banner
+    file:saved -> unsaved=false; effects: update-filename, set-unsaved
+    file:error -> effects: show-timed-banner
+
+  # --- Effect types ---
+
+  effects ServerSideEffect:
+    write-file(path: str, content: str)
+    update-yjs(path: str, content: str)
+    set-last-written-content(content: str)
+    reconcile(clientStateVector: Uint8Array, clientUpdate: Uint8Array, digest: str)
+    @doc("Performed by server transport adapter after FSM transition.")
+
+  effects ClientEffect:
+    set-editor-content(content: str)
+    render-preview(content: str, unsafeHtml: bool)
+    set-view-mode(mode: 'editor' | 'preview' | 'both')
+    init-color-mode(colorMode: 'day' | 'night' | 'auto')
+    init-lock-badge(readonly: bool)
+    set-editor-editable(editable: bool)
+    update-filename(path: str | null, modified: bool)
+    set-unsaved(unsaved: bool)
+    show-banner(text: str)
+    show-reload-banner(text: str, reloadContent: str)
+    show-timed-banner(text: str, durationMs: number)
+    hide-banner()
+    apply-yjs-update(base64Update: str)
+    reset-yjs(content: str)
+    @doc("Performed by client transport adapter after FSM transition.")
+
+  # --- Failure semantics ---
+
+  docs(failure):
+    Malformed messages: parseClientMessage returns null. Transport adapter
+    silently drops the message (no-op). No error reply sent.
+
+    Unexpected events: FSM returns state unchanged with empty reply/broadcast/
+    effects arrays. No error propagation.
+
+    Transport failures: Handled by transport adapters (reconnection logic,
+    polling fallback). FSM is unaware of transport state.
+
+  # --- External event types ---
+
+  event file-watcher:changed
+    @direction(external -> server)
+    @fields(content: str, base64Update: str, digest: str)
+    @doc("File watcher detected external change. Carries new content, Yjs update, and MD5 digest.")
+
+  event client:connected
+    @direction(external -> server)
+    @doc("New client connection established. Triggers init sequence.")
+
+  # --- Reconciliation handshake protocol ---
+
+  docs(reconciliation):
+    The reconciliation handshake resolves divergence between client and server
+    after a WebSocket reconnect. It uses digest comparison for fast-path
+    detection and Yjs state vector sync for merge.
+
+    Flow:
+    1. Client reconnects, receives file:open with digest
+    2. Client compares digest with lastDigest (from last file:open or file:changed)
+    3. Match: resume normally (fast-path, no reconciliation needed)
+    4. Mismatch: client sends reconcile:request with its Yjs state vector,
+       full state update, and last-observed digest
+    5. Server clones its Y.Doc, applies client update, compares merged
+       content with filesystem content
+    6. Server sends reconcile:complete with current digest and optional
+       Yjs diff update (if content diverged)
+    7. Client applies the diff update (if any) -- this flows through
+       the existing file:changed pipeline (banner, diff highlights, undo)
+
+    Buffering:
+    While a client is mid-reconciliation, file:changed broadcasts are
+    buffered for that client. After reconcile:complete, buffered messages
+    are flushed. This prevents race conditions where a file change arrives
+    between reconcile:request and reconcile:complete.
+
+    Failure:
+    If reconciliation fails (invalid client data, no active document),
+    the server sends file:error. The client remains in offline state
+    and retries via normal reconnection backoff.
+
+    The handshake is transparent to the user -- it produces 0 or 1
+    file:changed events that flow through the existing Phase 17 pipeline.

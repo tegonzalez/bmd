@@ -1,7 +1,6 @@
 import type { TableCharSet } from './types.ts';
 import type { AnsiLayer } from './ansi-layer.ts';
-import { displayWidth } from './wrap.ts';
-import stripAnsi from 'strip-ansi';
+import { displayWidth, wrapText } from './wrap.ts';
 
 export interface TableRow {
   cells: string[];
@@ -31,13 +30,13 @@ export function layoutTable(
 
   const numCols = Math.max(...rows.map(r => r.cells.length));
 
-  // Measure column widths using display width
-  const colWidths: number[] = new Array(numCols).fill(0);
+  // Measure natural column widths using display width.
+  const naturalWidths: number[] = new Array(numCols).fill(0);
   for (const row of rows) {
     for (let c = 0; c < numCols; c++) {
-      const cell = row.cells[c] || '';
+      const cell = row.cells[c]! || '';
       const w = displayWidth(cell);
-      if (w > colWidths[c]) colWidths[c] = w;
+      if (w > naturalWidths[c]!) naturalWidths[c] = w;
     }
   }
 
@@ -45,25 +44,7 @@ export function layoutTable(
   // Total = vertical + sum(space + colWidth + space) + vertical
   // = 1 + numCols * 2 (padding) + sum(colWidths) + (numCols - 1) * 1 (inner verticals) + 1
   const borderOverhead = 2 + numCols * 2 + (numCols - 1); // outer verticals + padding + inner verticals
-  const contentWidth = colWidths.reduce((a, b) => a + b, 0);
-  const totalWidth = borderOverhead + contentWidth;
-
-  // Proportionally shrink if needed
-  if (totalWidth > maxWidth && contentWidth > 0) {
-    const available = maxWidth - borderOverhead;
-    if (available > 0) {
-      const ratio = available / contentWidth;
-      for (let c = 0; c < numCols; c++) {
-        colWidths[c] = Math.max(1, Math.floor(colWidths[c] * ratio));
-      }
-      // Distribute remainder
-      let remaining = available - colWidths.reduce((a, b) => a + b, 0);
-      for (let c = 0; c < numCols && remaining > 0; c++) {
-        colWidths[c]++;
-        remaining--;
-      }
-    }
-  }
+  const colWidths = fitColumnWidths(naturalWidths, maxWidth - borderOverhead);
 
   const lines: string[] = [];
 
@@ -76,7 +57,7 @@ export function layoutTable(
 
   // Render header rows
   for (const row of headerRows) {
-    lines.push(contentLine(row.cells, colWidths, aligns, chars.vertical, ansi, true));
+    lines.push(...contentLines(row.cells, colWidths, aligns, chars.vertical, ansi, true));
   }
 
   // Header separator
@@ -86,7 +67,7 @@ export function layoutTable(
 
   // Render body rows
   for (const row of bodyRows) {
-    lines.push(contentLine(row.cells, colWidths, aligns, chars.vertical, ansi, false));
+    lines.push(...contentLines(row.cells, colWidths, aligns, chars.vertical, ansi, false));
   }
 
   // Bottom border
@@ -106,32 +87,101 @@ function horizontalLine(
   return left + segments.join(mid) + right;
 }
 
-function contentLine(
+function fitColumnWidths(naturalWidths: number[], available: number): number[] {
+  if (naturalWidths.length === 0) return [];
+
+  const naturalTotal = naturalWidths.reduce((a, b) => a + b, 0);
+  if (naturalTotal <= available) return [...naturalWidths];
+
+  if (available <= naturalWidths.length) {
+    return new Array(naturalWidths.length).fill(1);
+  }
+
+  const widths = new Array(naturalWidths.length).fill(1);
+  let remaining = available - naturalWidths.length;
+
+  // Preserve short, label-like columns before giving extra width to long text.
+  const readableCaps = naturalWidths.map(width => Math.min(width, 8));
+  remaining = distributeWidth(widths, readableCaps, remaining);
+
+  // Use any remaining room for columns that still need to wrap.
+  distributeWidth(widths, naturalWidths, remaining);
+
+  return widths;
+}
+
+function distributeWidth(widths: number[], caps: number[], remaining: number): number {
+  while (remaining > 0) {
+    let changed = false;
+
+    for (let c = 0; c < widths.length && remaining > 0; c++) {
+      if (widths[c]! >= caps[c]!) continue;
+      widths[c] = widths[c]! + 1;
+      remaining--;
+      changed = true;
+    }
+
+    if (!changed) break;
+  }
+
+  return remaining;
+}
+
+function contentLines(
   cells: string[],
   colWidths: number[],
   aligns: TableAlign[],
   vertical: string,
   ansi: AnsiLayer | null,
   isHeader: boolean,
-): string {
-  const parts: string[] = [];
-  for (let c = 0; c < colWidths.length; c++) {
-    let cell = cells[c] || '';
+): string[] {
+  const wrappedCells = colWidths.map((colWidth, c) => {
+    let cell = cells[c]! || '';
     if (isHeader && ansi) {
       cell = ansi.bold(cell);
     }
-    // Truncate cell content if it exceeds column width
-    let cellDisplayWidth = displayWidth(cell);
-    if (cellDisplayWidth > colWidths[c]) {
-      cell = truncateToWidth(cell, colWidths[c]);
-      cellDisplayWidth = displayWidth(cell);
-    }
-    const colWidth = colWidths[c];
-    const align = aligns[c] || 'left';
 
-    parts.push(alignCell(cell, cellDisplayWidth, colWidth, align));
+    const wrapped = wrapCell(cell, colWidth);
+    return wrapped.length > 0 ? wrapped : [''];
+  });
+  const rowHeight = Math.max(...wrappedCells.map(cellLines => cellLines.length));
+  const lines: string[] = [];
+
+  for (let lineIndex = 0; lineIndex < rowHeight; lineIndex++) {
+    const parts: string[] = [];
+
+    for (let c = 0; c < colWidths.length; c++) {
+      const cell = wrappedCells[c]![lineIndex]! || '';
+      const cellDisplayWidth = displayWidth(cell);
+      const colWidth = colWidths[c]!;
+      const align = aligns[c]! || 'left';
+
+      parts.push(alignCell(cell, cellDisplayWidth, colWidth, align));
+    }
+
+    lines.push(vertical + parts.join(vertical) + vertical);
   }
-  return vertical + parts.join(vertical) + vertical;
+
+  return lines;
+}
+
+function wrapCell(cell: string, colWidth: number): string[] {
+  if (!cell) return [''];
+
+  const logicalLines = cell.split('\n');
+  const visualLines: string[] = [];
+
+  for (const line of logicalLines) {
+    const wrapped = wrapText(line, colWidth, 0);
+    if (wrapped === '') {
+      visualLines.push('');
+      continue;
+    }
+
+    visualLines.push(...wrapped.split('\n'));
+  }
+
+  return visualLines;
 }
 
 function alignCell(
@@ -154,23 +204,4 @@ function alignCell(
     default:
       return ' ' + cell + ' '.repeat(padding) + ' ';
   }
-}
-
-/**
- * Truncate a string to fit within a given display width.
- * Handles ANSI escapes correctly by stripping them, truncating the plain text,
- * then returning just the truncated plain text (ANSI styling lost on truncation).
- */
-function truncateToWidth(text: string, maxWidth: number): string {
-  if (maxWidth <= 0) return '';
-  const plain = stripAnsi(text);
-  let width = 0;
-  let i = 0;
-  for (const char of plain) {
-    const charWidth = displayWidth(char);
-    if (width + charWidth > maxWidth) break;
-    width += charWidth;
-    i += char.length;
-  }
-  return plain.slice(0, i);
 }

@@ -1,0 +1,111 @@
+# bmd configuration file
+# =====================
+#
+# Place this file as bmd.config.yaml in your project root.
+# Config file search locations:
+#   1. ./bmd.config.yaml (current directory)
+#
+# Merge precedence: defaults < config file < CLI flags
+# CLI flags always override config file values.
+#
+# All fields are optional. Uncomment and modify as needed.
+# Unknown fields will cause a validation error (.strict() schema).
+
+# ─── Terminal rendering ────────────────────────────────────────
+
+# Terminal width override (positive integer)
+# Default: auto-detected from terminal columns
+# CLI: --width 120
+# width: 80
+
+# ANSI color output: "auto", "on", or "off"
+# auto = enabled when stdout is a TTY and NO_COLOR is unset
+# CLI: --ansi / --no-ansi
+# ansi: auto
+
+# Pager behavior (boolean)
+# true = page if output exceeds terminal height (auto mode)
+# false = never page
+# CLI: --pager / --no-pager
+# pager: true
+
+# Theme spec string
+# Format: facet:name+facet:name
+# Available facets: syn (syntax), md (markdown), mer (mermaid), web (browser), unic (unicode)
+# CLI: --theme "syn:dracula+md:dark"
+# theme: ""
+
+# Allow raw HTML in Markdown output (boolean)
+# Default: false (HTML is stripped for safety per SAFE-03)
+# CLI: --unsafe-html
+# unsafe_html: false
+
+# Enable invisible/ambiguous Unicode highlighting
+# Default: true
+# CLI: --no-unicode
+# unicode: true
+
+# ─── Template expansion ───────────────────────────────────────
+
+# templates:
+#   # Enable {{FIELD}} expansion before Markdown parsing
+#   # Default: true
+#   # CLI: --no-templates
+#   enabled: true
+#
+#   # Optional YAML map file for template values
+#   # CLI: --map values.yaml
+#   map: values.yaml
+#
+#   # Opt-in paired map discovery for .t source files:
+#   # README.t discovers README.yaml, then README.yml
+#   # Default: false
+#   auto_map: false
+#
+#   # Formatter for list values that are not ended by join/lines
+#   # Default behavior is equivalent to join/, /
+#   list_spec: "join/, /"
+
+# ─── Browser editor undo/redo ─────────────────────────────────
+
+# undo:
+#   # Delay in milliseconds before adjacent edits become separate undo entries
+#   # Default: 500
+#   group_delay: 500
+#
+#   # Maximum undo history depth
+#   # Default: 200
+#   depth: 200
+
+# ─── Browser preview server ───────────────────────────────────
+
+# serve:
+#   # Host to bind to
+#   # Default: localhost
+#   host: localhost
+#
+#   # Port to listen on (positive integer)
+#   # Default: 3000
+#   # CLI: --port 8080
+#   port: 3000
+#
+#   # Auto-open browser on server start (boolean)
+#   # Default: true
+#   # CLI: --open / --no-open
+#   open: true
+#
+#   # View mode: editor, preview, or both
+#   # Default: both
+#   # CLI: --mode preview
+#   mode: both
+#
+#   # Color mode: day, night, or auto
+#   # auto = follows system preference (prefers-color-scheme)
+#   # Default: auto
+#   # CLI: --color-mode night
+#   color_mode: auto
+#
+#   # Disable file editing in the browser (boolean)
+#   # Default: false
+#   # CLI: --readonly
+#   readonly: false

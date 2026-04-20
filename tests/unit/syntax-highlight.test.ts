@@ -1,10 +1,12 @@
 import { test, expect, describe } from "bun:test";
 import { highlightCodeBlock } from "../../src/transform/syntax-highlight.ts";
-import { renderTokens } from "../../src/renderer/base-renderer.ts";
 import { AsciiAdapter } from "../../src/renderer/ascii-adapter.ts";
 import { Utf8Adapter } from "../../src/renderer/utf8-adapter.ts";
 import { createAnsiLayer } from "../../src/renderer/ansi-layer.ts";
 import { DEFAULT_THEME } from "../../src/types/theme.ts";
+import { buildTree } from "../../src/pipeline/tree-build.ts";
+import { TerminalVisitor } from "../../src/pipeline/terminal-visitor.ts";
+import { parse } from "../../src/parser/index.ts";
 import type { Token } from "../../src/parser/index.ts";
 import type { HighlightToken } from "../../src/types/highlight.ts";
 import type { RenderContext } from "../../src/renderer/types.ts";
@@ -35,10 +37,8 @@ describe("highlightCodeBlock", () => {
     expect(token.meta).toBeDefined();
     expect(token.meta.highlightTokens).toBeDefined();
     expect(Array.isArray(token.meta.highlightTokens)).toBe(true);
-    // Should have at least one line of tokens
     expect(token.meta.highlightTokens.length).toBeGreaterThan(0);
-    // Each line should be an array of tokens
-    const firstLine = token.meta.highlightTokens[0];
+    const firstLine = token.meta.highlightTokens[0]!;
     expect(Array.isArray(firstLine)).toBe(true);
     expect(firstLine.length).toBeGreaterThan(0);
   });
@@ -54,7 +54,6 @@ describe("highlightCodeBlock", () => {
       for (const ht of line) {
         expect(typeof ht.content).toBe("string");
         expect(typeof ht.color).toBe("string");
-        // Color should be a hex string (6 chars, no alpha)
         if (ht.color) {
           expect(ht.color).toMatch(/^#[0-9a-fA-F]{6}$/);
         }
@@ -92,47 +91,56 @@ describe("runTransforms (async)", () => {
     const token = makeFenceToken("const x = 1;\n", "typescript");
     const tokens = [token];
 
-    // runTransforms should return a promise
     const result = runTransforms(tokens);
     expect(result).toBeInstanceOf(Promise);
     await result;
 
-    // After transform, the token should have highlightTokens
     expect(token.meta.highlightTokens).toBeDefined();
     expect(Array.isArray(token.meta.highlightTokens)).toBe(true);
   });
 });
 
-// --- Task 2: Renderer tests ---
+// --- TerminalVisitor: highlighted code blocks ---
 
 const mockHighlightTokens: HighlightToken[][] = [
   [
-    { content: "const", color: "#ff7b72", fontStyle: 2 },  // bold (keyword)
+    { content: "const", color: "#ff7b72", fontStyle: 2 },
     { content: " x = ", color: "#e1e4e8", fontStyle: 0 },
     { content: "1", color: "#79c0ff", fontStyle: 0 },
     { content: ";", color: "#e1e4e8", fontStyle: 0 },
   ],
   [
-    { content: "// comment", color: "#8b949e", fontStyle: 1 },  // italic (comment)
+    { content: "// comment", color: "#8b949e", fontStyle: 1 },
   ],
 ];
 
-function makeFenceTokenWithHighlights(
+/** Build a DocTree with a fence node that has highlightTokens in meta. */
+function fenceSource(content: string, info: string): string {
+  return "```" + info + "\n" + content + "\n```\n";
+}
+
+function buildTreeWithHighlightMeta(
   content: string,
   info: string,
   highlightTokens?: HighlightToken[][],
-): Token {
-  const token = makeFenceToken(content, info);
-  if (highlightTokens) {
-    (token.meta as any).highlightTokens = highlightTokens;
+) {
+  const { tokens } = parse(fenceSource(content, info));
+  // Inject highlightTokens into the fence token's meta
+  for (const t of tokens) {
+    if (t.type === 'fence') {
+      t.meta = t.meta || {};
+      if (highlightTokens) {
+        t.meta.highlightTokens = highlightTokens;
+      }
+    }
   }
-  return token;
+  return buildTree(tokens, [], []);
 }
 
-describe("Renderer: highlighted code blocks", () => {
+describe("TerminalVisitor: highlighted code blocks", () => {
   test("fence with highlightTokens + ansi mode renders per-token ANSI truecolor escapes", () => {
-    const token = makeFenceTokenWithHighlights(
-      "const x = 1;\n// comment\n",
+    const tree = buildTreeWithHighlightMeta(
+      "const x = 1;\n// comment",
       "typescript",
       mockHighlightTokens,
     );
@@ -145,19 +153,17 @@ describe("Renderer: highlighted code blocks", () => {
       theme: DEFAULT_THEME,
     };
 
-    const output = renderTokens([token], adapter, ansi, ctx);
+    const visitor = new TerminalVisitor(adapter, ansi, ctx);
+    const output = visitor.render(tree);
 
-    // Should contain truecolor ANSI escapes: \x1b[38;2;R;G;Bm
     expect(output).toMatch(/\x1b\[38;2;\d+;\d+;\d+m/);
-    // Should contain "const" text
     expect(output).toContain("const");
-    // Should contain "// comment" text
     expect(output).toContain("// comment");
   });
 
   test("fence with highlightTokens + utf8 mode renders bold/italic, no color escapes", () => {
-    const token = makeFenceTokenWithHighlights(
-      "const x = 1;\n// comment\n",
+    const tree = buildTreeWithHighlightMeta(
+      "const x = 1;\n// comment",
       "typescript",
       mockHighlightTokens,
     );
@@ -169,21 +175,19 @@ describe("Renderer: highlighted code blocks", () => {
       theme: DEFAULT_THEME,
     };
 
-    const output = renderTokens([token], adapter, null, ctx);
+    const visitor = new TerminalVisitor(adapter, null, ctx);
+    const output = visitor.render(tree);
 
-    // Should contain bold escape for keyword (fontStyle & 2)
-    expect(output).toContain("\x1b[1m");   // bold start
-    expect(output).toContain("\x1b[22m");  // bold end
-    // Should contain italic escape for comment (fontStyle & 1)
-    expect(output).toContain("\x1b[3m");   // italic start
-    expect(output).toContain("\x1b[23m");  // italic end
-    // Should NOT contain truecolor escapes
+    expect(output).toContain("\x1b[1m");
+    expect(output).toContain("\x1b[22m");
+    expect(output).toContain("\x1b[3m");
+    expect(output).toContain("\x1b[23m");
     expect(output).not.toMatch(/\x1b\[38;2;\d+;\d+;\d+m/);
   });
 
   test("fence with highlightTokens + ascii mode renders plain text (no ANSI escapes)", () => {
-    const token = makeFenceTokenWithHighlights(
-      "const x = 1;\n// comment\n",
+    const tree = buildTreeWithHighlightMeta(
+      "const x = 1;\n// comment",
       "typescript",
       mockHighlightTokens,
     );
@@ -193,20 +197,22 @@ describe("Renderer: highlighted code blocks", () => {
       format: "ascii",
       ansiEnabled: false,
       theme: DEFAULT_THEME,
+      parsedSource: fenceSource("const x = 1;\n// comment", "typescript"),
     };
 
-    const output = renderTokens([token], adapter, null, ctx);
+    const visitor = new TerminalVisitor(adapter, null, ctx);
+    const output = visitor.render(tree);
 
-    // Should NOT contain any ANSI escapes
     expect(output).not.toContain("\x1b[");
-    // Should contain the text content
     expect(output).toContain("const");
     expect(output).toContain("// comment");
   });
 
-  test("fence without highlightTokens renders as before (plain code block)", () => {
-    const token = makeFenceToken("some code\n", "javascript");
-    // No highlightTokens in meta
+  test("fence without highlightTokens renders plain code block", () => {
+    const tree = buildTreeWithHighlightMeta(
+      "some code",
+      "javascript",
+    );
     const adapter = new Utf8Adapter();
     const ansi = createAnsiLayer(DEFAULT_THEME);
     const ctx: RenderContext = {
@@ -214,19 +220,19 @@ describe("Renderer: highlighted code blocks", () => {
       format: "utf8",
       ansiEnabled: true,
       theme: DEFAULT_THEME,
+      parsedSource: fenceSource("some code", "javascript"),
     };
 
-    const output = renderTokens([token], adapter, ansi, ctx);
+    const visitor = new TerminalVisitor(adapter, ansi, ctx);
+    const output = visitor.render(tree);
 
-    // Should NOT have truecolor escapes (no highlight tokens)
     expect(output).not.toMatch(/\x1b\[38;2;\d+;\d+;\d+m/);
-    // Should contain the code content
     expect(output).toContain("some code");
   });
 
   test("language label appears above code block for fence tokens with info string", () => {
-    const token = makeFenceTokenWithHighlights(
-      "const x = 1;\n",
+    const tree = buildTreeWithHighlightMeta(
+      "const x = 1;",
       "typescript",
       mockHighlightTokens,
     );
@@ -237,12 +243,13 @@ describe("Renderer: highlighted code blocks", () => {
       format: "utf8",
       ansiEnabled: true,
       theme: DEFAULT_THEME,
+      parsedSource: fenceSource("const x = 1;", "typescript"),
     };
 
-    const output = renderTokens([token], adapter, ansi, ctx);
+    const visitor = new TerminalVisitor(adapter, ansi, ctx);
+    const output = visitor.render(tree);
     const lines = output.split("\n");
 
-    // First non-empty line should contain the language label "typescript"
     const firstContentLine = lines.find(l => l.trim().length > 0);
     expect(firstContentLine).toContain("typescript");
   });

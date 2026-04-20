@@ -30,7 +30,7 @@ describe("layoutTable", () => {
     const lines = result.split("\n").filter(l => l.length > 0);
     // All content lines should have same visual width
     const widths = lines.map(l => displayWidth(l));
-    const firstWidth = widths[0];
+    const firstWidth = widths[0]!;
     for (const w of widths) {
       expect(w).toBe(firstWidth);
     }
@@ -105,5 +105,30 @@ describe("layoutTable", () => {
     for (const line of lines) {
       expect(displayWidth(line)).toBeLessThanOrEqual(30);
     }
+  });
+
+  test("wraps long cell content instead of truncating it", () => {
+    const rows: TableRow[] = [
+      { cells: ["Key", "Description"], isHeader: true },
+      {
+        cells: [
+          "foo",
+          "alpha beta gamma delta epsilon zeta eta theta omega",
+        ],
+        isHeader: false,
+      },
+    ];
+
+    const result = layoutTable(rows, ["left", "left"], 36, asciiChars, null);
+    const lines = result.split("\n").filter(l => l.length > 0);
+
+    for (const line of lines) {
+      expect(displayWidth(line)).toBeLessThanOrEqual(36);
+    }
+    expect(result).toContain("Key");
+    expect(result).toContain("foo");
+    expect(result).toContain("alpha");
+    expect(result).toContain("theta");
+    expect(result).toContain("omega");
   });
 });

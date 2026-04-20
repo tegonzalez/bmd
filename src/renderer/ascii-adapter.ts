@@ -4,7 +4,7 @@ const BULLETS = ['*', '-', '+'];
 
 export class AsciiAdapter implements FormatAdapter {
   bulletChar(depth: number): string {
-    return BULLETS[depth % BULLETS.length];
+    return BULLETS[depth % BULLETS.length]!;
   }
 
   hrRule(width: number): string {

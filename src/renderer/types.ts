@@ -5,6 +5,7 @@
 
 import type { ThemeConfig } from '../types/theme.ts';
 import type { OutputFormat } from '../types/index.ts';
+import type { ResolvedTheme } from '../theme/types.ts';
 
 export interface TableCharSet {
   topLeft: string;
@@ -34,7 +35,13 @@ export interface RenderContext {
   width: number;
   format: OutputFormat;
   ansiEnabled: boolean;
-  theme: ThemeConfig;
+  /** MdTheme or full resolved theme (unic facet used when present) */
+  theme?: ThemeConfig | ResolvedTheme;
+  /**
+   * Markdown source after template marker decode — same string passed to parse().
+   * Used for exact fence / byte alignment (opening fence line scan).
+   */
+  parsedSource?: string;
 }
 
 export interface ListContext {

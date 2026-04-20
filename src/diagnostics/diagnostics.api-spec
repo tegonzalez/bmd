@@ -1,0 +1,130 @@
+# diagnostics api-spec
+# Unified diagnostic and debug logging contract for bmd.
+
+mod diagnostics:
+
+  docs:
+    Single entry point for all observable output in bmd: document diagnostics
+    (parser, config, theme errors pointing at user content) and source-level
+    debug traces (FSM transitions, WS events, runtime errors pointing at our
+    TypeScript source).
+
+    The Severity enum is the discriminator:
+      DiagError / DiagWarn → file:line:col:span references the user's document.
+      Info / Debug / Debug2 / Debug3 → file:line:col references our source code.
+
+    Logger is an object, not a global. Entry points create and configure
+    their own instance with appropriate sinks. Each sink has its own gating
+    level. Diag-level entries always emit to every sink (never gated).
+    Debug-level entries are gated per-sink by each sink's level.
+
+  # --- Severity ---
+
+  enum Severity:
+    ^DiagError: int
+    ^DiagWarn: int
+    ^Info: int
+    ^Debug: int
+    ^Debug2: int
+    ^Debug3: int
+
+  docs(Severity):
+    DiagError/DiagWarn are document diagnostics — always emitted, never gated.
+    Info+ are source traces — gated per-sink.
+    Numeric ordering enables >= comparison for gating.
+
+  # --- Diagnostic DTO ---
+
+  struct Diagnostic:
+    fn file() -> str
+    fn line() -> int
+    fn col() -> int
+    fn span() -> int
+    fn message() -> str
+    fn severity() -> Severity
+    fn context() -> str?
+
+  docs(Diagnostic):
+    Internal DTO constructed by Logger.log(). Not constructed by callers directly.
+    For Severity <= DiagWarn: file/line/col/span reference user document,
+    context is document source text for caret display.
+    For Severity >= Info: file/line/col reference our TypeScript source,
+    span is 0, context is never present.
+
+  # --- Sink ---
+
+  struct LogSink:
+    fn write(diag: Diagnostic) -> ()
+    fn level() -> Severity
+
+  docs(LogSink):
+    Output destination with its own gating level.
+    Diag-level entries bypass the level gate and always reach write().
+    Debug-level entries reach write() only if severity <= sink.level().
+
+  # --- Logger ---
+
+  class Logger:
+    fn log(severity: Severity, message: str) -> ()
+      @doc("Source trace. file/line/col derived from call site via Error().stack. span=0, no context. Stack parsing only runs when severity passes at least one sink's level gate — zero cost when debug is off.")
+
+    fn logDiag(severity: Severity, file: str, line: int, col: int, message: str, span: int = 0, context: str? = null) -> ()
+      @doc("Document diagnostic. Caller provides file/line/col/span/context referencing the user's document.")
+
+    fn addSink(sink: LogSink) -> ()
+      @doc("Register a sink. Duplicate adds are no-op.")
+
+    fn removeSink(sink: LogSink) -> ()
+      @doc("Unregister a sink.")
+
+    fn clearSinks() -> ()
+      @doc("Remove all sinks.")
+
+    fn setLevel(level: Severity) -> ()
+      @doc("Set all current sinks to the same level.")
+
+    fn getLevel() -> Severity
+      @doc("Return the level of the first sink, or Info if no sinks.")
+
+  fn createLogger() -> Logger
+    @doc("Create a new Logger instance with no sinks.")
+
+  # --- Built-in sink factories ---
+
+  fn stderrSink(level: Severity = Severity.Info) -> LogSink
+    @doc("Server sink. Writes formatDiagnostic(diag) + newline to process.stderr.")
+
+  fn consoleSink(level: Severity = Severity.Debug3) -> LogSink
+    @doc("Browser sink. Calls console.error(formatDiagnostic(diag)). Default Debug3: show everything until server narrows.")
+
+  fn wsSink(send: fn(msg: any) -> (), level: Severity = Severity.Debug3) -> LogSink
+    @doc("Browser WS relay sink. Serializes Diagnostic and sends as client:diagnostic over WS.")
+
+  # --- Pure utilities ---
+
+  fn formatDiagnostic(diag: Diagnostic) -> str @pure
+    @doc("Format into compiler-style output: 'bmd: {label}: {file}:{line}:{col}: {message}'. Appends source line + caret if context present.")
+
+  fn buildContext(source: str, offset: int, length: int) -> (line: int, col: int, span: int, context: str) @pure
+    @doc("Convert byte offset + length in document source to line/col/span/context for log() opts.")
+
+  fn offsetToLineCol(source: str, offset: int) -> (line: int, col: int) @pure
+    @doc("Convert byte offset to 1-based line and column.")
+
+  fn parseSeverityName(name: str) -> Severity? @pure
+    @doc("Parse severity name to enum value. Case-insensitive.")
+
+  # --- Existing contract surface ---
+
+  enum ExitCode:
+    ^SUCCESS: int = 0
+    ^USAGE: int = 2
+    ^PARSE: int = 3
+    ^MERMAID: int = 4
+    ^THEME: int = 5
+    ^OUTPUT: int = 6
+    ^SERVE: int = 7
+
+  class BmdError:Error:
+    fn exitCode() -> int
+    fn diagnostic() -> Diagnostic?

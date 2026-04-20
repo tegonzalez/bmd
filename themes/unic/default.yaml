@@ -1,0 +1,67 @@
+# Default unicode detection theme
+# Per-category styling for invisible character glyph substitutions
+
+zero-width:
+  fg: "#e06c75"
+
+bidi:
+  fg: "#e5c07b"
+  bg: "#3e3022"
+  bold: true
+
+template-region:
+  fg: "#60a5fa"
+  bg: "#1e293b"
+
+template-unresolved:
+  fg: "#94a3b8"
+  bg: "#1e293b"
+
+tag:
+  fg: "#c678dd"
+
+c0-control:
+  fg: "#e06c75"
+
+c1-control:
+  fg: "#e06c75"
+
+ansi-escape:
+  fg: "#e06c75"
+  bg: "#2c1a1a"
+  bold: true
+
+whitespace:
+  fg: "#7f848e"
+  bg: "#3e3022"
+
+pua:
+  fg: "#c678dd"
+
+ai-watermark:
+  fg: "#61afef"
+
+variation-sel:
+  fg: "#7f848e"
+  bg: "#3e3022"
+
+annotation:
+  fg: "#c678dd"
+
+deprecated:
+  fg: "#7f848e"
+  bg: "#3e3022"
+
+noncharacter:
+  fg: "#e06c75"
+
+separator:
+  fg: "#7f848e"
+  bg: "#3e3022"
+
+combining-flood:
+  fg: "#e5c07b"
+
+unclassified:
+  fg: "#7f848e"
+  bg: "#3e3022"

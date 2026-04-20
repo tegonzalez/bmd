@@ -1,7 +1,10 @@
 import { test, expect, describe } from "bun:test";
 import { parse } from "../../src/parser/index.ts";
 import { readFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 describe("parse", () => {
   test("heading produces heading_open, inline, heading_close tokens", () => {
@@ -49,8 +52,8 @@ describe("parse", () => {
     expect(result.env).toBeDefined();
     expect(result.env.references).toBeDefined();
     // markdown-exit normalizes reference keys to uppercase
-    expect(result.env.references["REF"]).toBeDefined();
-    expect(result.env.references["REF"].href).toBe("https://example.com");
+    expect(result.env.references["REF"]!).toBeDefined();
+    expect(result.env.references["REF"]!.href).toBe("https://example.com");
   });
 
   test("html: false does not produce html_block tokens for raw HTML", () => {
@@ -64,7 +67,7 @@ describe("parse", () => {
 
   test("parses basic.md fixture without errors", () => {
     const fixture = readFileSync(
-      join(import.meta.dir, "../fixtures/basic.md"),
+      join(__dirname, "../fixtures/basic.md"),
       "utf-8"
     );
     const result = parse(fixture);
@@ -83,7 +86,7 @@ describe("parse", () => {
 
   test("parses code-blocks.md fixture without errors", () => {
     const fixture = readFileSync(
-      join(import.meta.dir, "../fixtures/code-blocks.md"),
+      join(__dirname, "../fixtures/code-blocks.md"),
       "utf-8"
     );
     const result = parse(fixture);

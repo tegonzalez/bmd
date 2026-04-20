@@ -48,6 +48,21 @@ describe("wrapText", () => {
   test("handles text shorter than width", () => {
     expect(wrapText("short", 80, 0)).toBe("short");
   });
+
+  test("does not glue words when wrap falls after a space (trim: false preserves gap)", () => {
+    const text =
+      "one two three four five six seven eight nine ten eleven twelve";
+    const result = wrapText(text, 14, 0);
+    expect(result).not.toMatch(/[a-z]\n[a-z]/);
+  });
+
+  test("keeps comma-space across wrap (no }},\\n{{)", () => {
+    const text =
+      "prefix text {{CLIENT_ADDRESS}}, {{CLIENT_CSZ}}, suffix words here";
+    const result = wrapText(text, 42, 0);
+    expect(result).not.toMatch(/\}\}\s*,\n\{\{/);
+    expect(result).toMatch(/\}\}\s*,\s+\n\{\{/);
+  });
 });
 
 describe("displayWidth", () => {

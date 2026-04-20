@@ -1,0 +1,21 @@
+:root {
+  color-scheme: light dark;
+  --fixture-bg: #ffffff;
+  --fixture-fg: #1a1a2e;
+  --fixture-accent: #2563eb;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  background: var(--fixture-bg);
+  color: var(--fixture-fg);
+  font-family: system-ui, sans-serif;
+}
+
+#app {
+  border: 1px solid var(--fixture-accent);
+  padding: 1rem;
+}

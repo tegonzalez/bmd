@@ -4,7 +4,7 @@ const BULLETS = ['\u2022', '\u25E6', '\u25AA']; // bullet, circle, square
 
 export class Utf8Adapter implements FormatAdapter {
   bulletChar(depth: number): string {
-    return BULLETS[depth % BULLETS.length];
+    return BULLETS[depth % BULLETS.length]!;
   }
 
   hrRule(width: number): string {

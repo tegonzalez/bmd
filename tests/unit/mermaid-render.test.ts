@@ -1,6 +1,7 @@
 import { test, expect, describe, mock, spyOn } from "bun:test";
 import type { Token } from "../../src/parser/index.ts";
 import * as diagnostics from "../../src/diagnostics/formatter.ts";
+import { Severity } from "../../src/diagnostics/formatter.ts";
 
 function makeFenceToken(content: string, info: string): Token {
   return {
@@ -54,7 +55,7 @@ describe("renderMermaidBlock", () => {
     expect(token.content).toBe(originalContent);
     // Diagnostic should have been emitted
     expect(spy).toHaveBeenCalled();
-    expect(spy.mock.calls[0]?.[0]?.severity).toBe("error");
+    expect(spy.mock.calls[0]!?.[0]!?.severity).toBe(Severity.DiagError);
 
     spy.mockRestore();
   });
@@ -74,7 +75,7 @@ describe("renderMermaidBlock", () => {
     expect(meta.mermaidRendered).toBeUndefined();
     // Diagnostic should be a warning
     expect(spy).toHaveBeenCalled();
-    expect(spy.mock.calls[0]?.[0]?.severity).toBe("warning");
+    expect(spy.mock.calls[0]!?.[0]!?.severity).toBe(Severity.DiagWarn);
 
     spy.mockRestore();
   });

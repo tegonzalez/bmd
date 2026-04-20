@@ -1,0 +1,19 @@
+headings:
+  1: { bold: true, color: "#005f87" }
+  2: { bold: true, color: "#005f00" }
+  3: { bold: true, color: "#875f00" }
+  4: { bold: true, color: "#00005f" }
+  5: { bold: true, color: "#870087" }
+  6: { bold: true, color: "#303030" }
+codeBlockIndent: 4
+blockquoteBarChar: "|"
+tableBorder: true
+listBullets: ["*", "-", "+"]
+linkFormat: "inline"
+hrChar: "-"
+hrWidth: "full"
+elementSpacing: 1
+boldColor: "#000000"
+codeColor: "#555555"
+blockquoteBarColor: "#555555"
+linkColor: "#005faf"

@@ -1,13 +1,19 @@
 /**
  * Theme configuration for bmd rendering.
- * Phase 1 uses hardcoded defaults; Phase 4 will load from YAML theme files.
+ *
+ * ThemeConfig is deprecated -- use MdTheme from theme/schema/md.ts instead.
+ * Kept for backward compatibility with existing code paths.
  */
+
+// Re-export MdTheme as the "new" theme type
+export type { MdTheme } from '../theme/schema/md.ts';
 
 export interface HeadingStyle {
   bold: boolean;
   color: string;
 }
 
+/** @deprecated Use MdTheme from theme/schema/md.ts */
 export interface ThemeConfig {
   headings: Record<number, HeadingStyle>;
   codeBlockIndent: number;
@@ -20,6 +26,7 @@ export interface ThemeConfig {
   elementSpacing: number;
 }
 
+/** @deprecated Use DEFAULT_MD from theme/defaults.ts */
 export const DEFAULT_THEME: ThemeConfig = {
   headings: {
     1: { bold: true, color: 'cyan' },

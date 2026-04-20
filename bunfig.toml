@@ -1,1 +1,5 @@
+[resolve]
+conditions = ["bun"]
+
 [test]
+preload = ["./tests/setup.ts"]

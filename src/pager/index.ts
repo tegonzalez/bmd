@@ -49,7 +49,7 @@ export async function outputWithPager(
   // Spawn pager
   const pagerCmd = process.env.PAGER || 'less -R';
   const parts = pagerCmd.split(/\s+/);
-  const cmd = parts[0];
+  const cmd = parts[0]!;
   const args = parts.slice(1);
 
   return new Promise<void>((resolve, reject) => {

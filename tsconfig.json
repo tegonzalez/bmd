@@ -21,5 +21,17 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "exclude": [
+    "external",
+    "dist",
+    ".planning",
+    "node_modules",
+    ".generated",
+    "generated",
+    "scratch",
+    "tmp",
+    "coverage"
+  ]
 }

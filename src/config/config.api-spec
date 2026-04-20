@@ -1,0 +1,116 @@
+# config api-spec
+# Configuration contract for bmd.
+# Defines the unified BmdConfig DTO and the resolveConfig merge function.
+
+import "../theme/theme.api-spec":
+  ResolvedTheme: .theme.ResolvedTheme
+
+mod config:
+
+  docs:
+    BmdConfig is the single unified configuration DTO for bmd. All fields
+    are fully resolved -- no raw/unresolved values remain after construction.
+    It replaces the previous collection of RenderOptions, TransformContext,
+    ServeOptions, and ResolvedConfig as the canonical configuration type.
+
+    resolveConfig is the sole constructor. It performs a three-layer merge
+    (defaults < config file < CLI flags) using nullish coalescing semantics:
+    undefined in a higher layer means "not set" and does not override lower
+    layers.
+
+    ResolvedTheme is imported from the theme contract (theme.api-spec).
+    The theme contract owns the type; this module is the consumer.
+    See: src/theme/theme.api-spec for the authoritative definition.
+
+  # --- Types ---
+
+  type CliArgs:
+    format?: 'ascii' | 'utf8'
+    width?: number
+    ansiEnabled?: boolean
+    pager?: PagerMode
+    filePath?: string
+    theme?: string
+    resolvedTheme?: ResolvedTheme
+    unsafeHtml?: boolean
+    serve?: Partial[BmdConfig['serve']]
+    @doc("CLI arguments. All values are pre-resolved by the caller.")
+
+  docs(CliArgs):
+    All fields are optional. Callers resolve ambiguous values before
+    constructing CliArgs:
+    - width is a number (resolved from "auto" + terminal columns)
+    - ansiEnabled is a boolean (resolved from tri-state + TTY detection)
+    - pager is a PagerMode (resolved from --pager/--no-pager flags)
+    - resolvedTheme is an async-resolved ResolvedTheme (loaded before merge)
+    - format is set by CLI subcommand (ascii vs utf8), not in config file
+    - filePath is set by CLI positional argument, not in config file
+
+  type RawFileConfig:
+    @doc("Zod-inferred type from configSchema. Snake_case fields, unresolved values. Internal use only.")
+    @source("z.infer<typeof configSchema> in schema.ts")
+
+  # --- Construction ---
+
+  fn resolveConfig(cli: CliArgs, config: Partial[RawFileConfig] | null | undefined) -> BmdConfig
+    @pure
+    @doc("Three-layer config merge: defaults < config file < CLI flags.")
+    @ensures("all BmdConfig fields are fully resolved")
+    @ensures("undefined CLI values do not override lower layers")
+    @ensures("serve sub-object merged field-by-field, not replaced wholesale")
+
+  docs(resolveConfig):
+    Merges configuration from three layers using nullish coalescing (??):
+
+    1. DEFAULTS -- hardcoded baseline values (see field table)
+    2. Config file -- sparse user config from bmd.config.yaml, snake_case
+       mapped to camelCase via mapping functions
+    3. CLI flags -- highest priority, already resolved values
+
+    Config file field mappings:
+    - width: number used directly; "auto" treated as unset (mapConfigWidth)
+    - ansi: "on" -> true, "off" -> false, "auto" -> unset (mapAnsiTriState)
+    - pager: false -> 'never', true -> 'auto' (mapPagerBoolean)
+    - unsafe_html -> unsafeHtml: direct boolean mapping
+    - serve.color_mode -> serve.colorMode: direct mapping
+    - theme: parsed via parseThemeSpec, merged per-facet (config < CLI)
+
+    Theme resolution:
+    - Theme spec strings are parsed and merged per-facet (config < CLI)
+    - Pre-resolved ResolvedTheme from cli.resolvedTheme takes precedence
+    - resolveConfig itself is synchronous; async theme loading occurs in
+      the CLI adapter before calling resolveConfig
+
+  # --- Field table ---
+  # All 13 fields of BmdConfig with types, defaults, and merge rules.
+
+  @doc("Field: format | Type: 'ascii' | 'utf8' | Default: 'utf8' | Merge: CLI only (not in config file)")
+  @doc("Field: width | Type: number | Default: 80 | Merge: defaults < config < CLI; 'auto' resolved before construction")
+  @doc("Field: ansiEnabled | Type: boolean | Default: true | Merge: defaults < config < CLI; tri-state resolved before construction")
+  @doc("Field: pager | Type: PagerMode | Default: 'auto' | Merge: defaults < config < CLI; config boolean mapped to PagerMode")
+  @doc("Field: unsafeHtml | Type: boolean | Default: false | Merge: defaults < config (unsafe_html) < CLI")
+  @doc("Field: filePath | Type: string | undefined | Default: undefined | Merge: CLI only (not in config file)")
+  @doc("Field: theme | Type: ResolvedTheme | undefined | Default: undefined | Merge: resolved async before construction; passed as resolvedTheme")
+  @doc("Field: serve.host | Type: string | Default: '0.0.0.0' | Merge: defaults < config < CLI")
+  @doc("Field: serve.port | Type: number | Default: 3000 | Merge: defaults < config < CLI")
+  @doc("Field: serve.open | Type: boolean | Default: true | Merge: defaults < config < CLI")
+  @doc("Field: serve.mode | Type: 'editor' | 'preview' | 'both' | Default: 'both' | Merge: defaults < config < CLI")
+  @doc("Field: serve.colorMode | Type: 'day' | 'night' | 'auto' | Default: 'auto' | Merge: defaults < config (color_mode) < CLI")
+  @doc("Field: serve.readonly | Type: boolean | Default: false | Merge: defaults < config < CLI")
+
+  # --- Failure semantics ---
+
+  docs(failure):
+    Invalid theme spec string: fallback to undefined theme (no theme override).
+    parseThemeSpec errors are caught and silently produce empty ThemeSpec.
+
+    Invalid width from config ("auto"): treated as unset, falls through to
+    default (80). Numeric values used directly.
+
+    Missing config file: config parameter is null/undefined, all defaults used.
+
+    Malformed config file: BmdError thrown at load time (before resolveConfig
+    is called). Zod parse failure produces structured error.
+
+    Unknown config fields: rejected by Zod strict mode on configSchema.
+    Validation error thrown before resolveConfig receives the data.
